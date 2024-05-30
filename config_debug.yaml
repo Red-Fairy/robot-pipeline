@@ -1,0 +1,18 @@
+# VLA Model arguments
+model_name_or_path: /home/v-rundongluo/checkpoints/0524-mistral/checkpoint-22000
+model_revision: main
+torch_dtype: float16
+use_flash_attention_2: false
+
+# Data training arguments
+preprocessing_num_workers: 12
+data_root: /home/v-rundongluo/data-rundong/bridge2_processed/tokenized_with_gt_action/
+padding_side: left
+num_visual_action_tokens: 16384
+static_video_description:
+  - ""
+dataset_type: dataset # or iterable_dataset
+src_filepath: /home/v-rundongluo/test.jsonl
+
+# TATS Tokenizer Arguments
+weight_path: /home/v-rundongluo/data-rundong/VQ3D-vision-action/0515-action111-actionMask0.5/checkpoints/step_checkpoint-step_30000.ckpt
