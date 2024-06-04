@@ -77,7 +77,11 @@ def call_vla(instance_data: dict,
     return output_action_tokens_pred, output_clip_description_pred
 
 def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pipeline, 
-                tats_args: TATSModelArguments, data_args: DataArguments, device):
+                tats_args: TATSModelArguments, data_args: DataArguments, device) -> dict:
+    '''
+    call the models to predict the actions and clip description
+    override the original actions and clip description with the predicted ones
+    '''
     
     video_tokens, action_tokens = encode(instance_data, model_vq, tats_args, device=device)
 
@@ -89,15 +93,6 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pi
     instance_data['actions'] = output_action_pred.tolist()
 
     return instance_data
-
-def call_robot(instance_data, robot) -> dict:
-    '''
-    use the predicted actions to call the robot
-    should override the image_paths with the observation after movement, 
-    and override the given actions with the actual ones (as the robot may not be able to follow the predicted actions exactly)
-    return the new instance_data 
-    '''
-    pass
 
 def main():
 
@@ -120,18 +115,43 @@ def main():
     vla_pipe = mii.pipeline(vla_args.model_name_or_path)
 
     # 1. encode the images and actions
-    with open(data_args.src_filepath, 'r') as f:
-        lines = f.readlines()
-        assert len(lines) == 1
-        line = lines[0]
+    f = open(data_args.src_filepath, 'r')
+    lines = f.readlines()
+    f.close()
+    assert len(lines) == 1
+    instance_data = json.loads(lines[0]) # (RT-1) trajectory_id, frame_number, task_description, image_indices, actions
 
-        instance_data = json.loads(line)
+    save_path = '../output.json'
+    output_data = {}
+    pred_descriptions = {}
+    pred_actions = torch.empty(0, 7)
 
-    # call the models, override original actions and clip description with the predicted ones
-    instance_data = call_models(instance_data, model_vq, vla_pipe, tats_args, data_args, device)
+    image_format = '/mnt/robotdata/RT1-images' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}' + '.png'
+    cur_instance_data = {}
+    cur_instance_data['task_description'] = instance_data['task_description']
+    cur_instance_data['scene_description'] = instance_data['scene_description']
 
-    # call the robot, override the image_paths and actions with the actual ones
-    instance_data = call_robot(instance_data, robot)
+    for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6)):
+        if start_frame != -1:
+            cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
+            cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
+        else:
+            cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
+            cur_instance_data['actions'] = [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] * 6
+        
+        # call the models, override original actions and clip description with the predicted ones
+        cur_instance_data = call_models(cur_instance_data, model_vq, vla_pipe, tats_args, data_args, device)
+        pred_descriptions[6*(start_frame+1)] = cur_instance_data['clip_description']
+        pred_actions = torch.cat((pred_actions, torch.tensor(cur_instance_data['actions'])), dim=0)
+
+    output_data['trajectory_id'] = instance_data['trajectory_id']
+    output_data['task_description'] = instance_data['task_description']
+    output_data['scene_description'] = instance_data['scene_description']
+    output_data['pred_descriptions'] = pred_descriptions
+    output_data['pred_actions'] = pred_actions.tolist()
+
+    with open(save_path, 'w') as f:
+        json.dump(output_data, f)
 
 if __name__ == '__main__':
     main()

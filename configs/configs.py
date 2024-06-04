@@ -353,4 +353,8 @@ class TATSModelArguments:
         default=None,
         metadata={"help": "The path to the weight file."}
     )
+    wo_transformer_residual: bool = field (
+        default=False,
+        metadata={"help": "Whether to use transformer residual."}
+    )
     
