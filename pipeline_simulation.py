@@ -119,14 +119,17 @@ def main():
     lines = f.readlines()
     f.close()
     assert len(lines) == 1
-    instance_data = json.loads(lines[0]) # (RT-1) trajectory_id, frame_number, task_description, image_indices, actions
+
+    # (RT-1) trajectory_id, frame_number, task_description, image_indices, actions
+    instance_data = json.loads(lines[0]) 
 
     save_path = '../output.json'
     output_data = {}
     pred_descriptions = {}
     pred_actions = torch.empty(0, 7)
 
-    image_format = '/mnt/robotdata/RT1-images' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}' + '.png'
+    image_format = '/mnt/robotdata/images_bridge' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}_' + str(instance_data['view']) + '.png'
+    # image_format = '/mnt/robotdata/RT1-images' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}' + '.png'
     cur_instance_data = {}
     cur_instance_data['task_description'] = instance_data['task_description']
     cur_instance_data['scene_description'] = instance_data['scene_description']
