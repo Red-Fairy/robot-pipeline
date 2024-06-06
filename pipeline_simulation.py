@@ -127,7 +127,6 @@ def main():
     f.close()
     assert len(lines) == 1
 
-    # (RT-1) trajectory_id, frame_number, task_description, image_indices, actions
     instance_data = json.loads(lines[0]) 
 
     save_path = '../output.json'
