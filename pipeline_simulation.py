@@ -115,6 +115,13 @@ def main():
     vla_pipe = mii.pipeline(vla_args.model_name_or_path)
 
     # 1. encode the images and actions
+    # src file should contains the following entry
+    '''
+    trajectory_id, frame_number
+    task_description, scene_description, input_clip_description
+    image_indices
+    actions, mean, std
+    '''
     f = open(data_args.src_filepath, 'r')
     lines = f.readlines()
     f.close()

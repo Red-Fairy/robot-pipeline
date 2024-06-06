@@ -42,6 +42,9 @@ def encode(instance_data, model, tats_args, device):
     video = torch.stack(video).permute(1,0,2,3).to(device) # [C, T, H, W]
     action = torch.tensor(instance_data['actions']).to(device) # [T, 7]
 
+    # normalize the actions
+    action = (action - instance_data['mean']) / instance_data['std']
+
     _, _, vq_output, vq_output_action = model(video.unsqueeze(0), action.unsqueeze(0))
     video_tokens, action_tokens = vq_output['encodings'].reshape(-1), vq_output_action['encodings'].reshape(-1) # video tokens: 3*256=768, action tokens: 6*7=42
 
@@ -57,7 +60,7 @@ def call_vla(instance_data: dict,
 
     input_text = '<bott_i>' + instance_data['task_description'] + '<eott_i>' + \
                 '<bots_i>' + instance_data['scene_description'] + '<eots_i>' + \
-                '<botp_i>' + instance_data['input_clip_description'] + '<eotp_i>'
+                '<botp_i>' + instance_data['clip_description'] + '<eotp_i>'
 
     if data_args.action_before_vision:
         input_text += '<boa_i>' + ''.join([f'<va{str(x)}>' for x in action_tokens]) + '<eoa_i>' + \
@@ -120,6 +123,9 @@ def main():
     vla_pipe = mii.pipeline(vla_args.model_name_or_path)
 
     # 1. encode the images and actions
+    # the src_filepath should contain the following fields
+    # task_description, scene_description, clip_description, image_paths
+    # actions, mean, std (for normalizing the actions)
     with open(data_args.src_filepath, 'r') as f:
         lines = f.readlines()
         assert len(lines) == 1
