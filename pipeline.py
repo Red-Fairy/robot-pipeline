@@ -43,7 +43,7 @@ def encode(instance_data, model, tats_args, device):
     action = torch.tensor(instance_data['actions']).to(device) # [T, 7]
 
     # normalize the actions
-    action = (action - instance_data['mean']) / instance_data['std']
+    action = (action - torch.tensor(instance_data['mean']).to(device)) / torch.tensor(instance_data['std']).to(device)
 
     _, _, vq_output, vq_output_action = model(video.unsqueeze(0), action.unsqueeze(0))
     video_tokens, action_tokens = vq_output['encodings'].reshape(-1), vq_output_action['encodings'].reshape(-1) # video tokens: 3*256=768, action tokens: 6*7=42

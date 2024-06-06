@@ -326,7 +326,7 @@ class TATSModelArguments:
         metadata={"help": "The number of action dimensions."}
     )
     action_activation: Tuple[str] = field (
-        default=('tanh', 'tanh', 'tanh', 'tanh', 'tanh', 'tanh','sigmoid'),
+        default=('none', 'none', 'none', 'none', 'none', 'none', 'sigmoid'),
         metadata={"help": "The activation function for the action."}
     )
     action_hidden_dim: int = field (
@@ -354,7 +354,7 @@ class TATSModelArguments:
         metadata={"help": "The path to the weight file."}
     )
     wo_transformer_residual: bool = field (
-        default=False,
+        default=True,
         metadata={"help": "Whether to use transformer residual."}
     )
     

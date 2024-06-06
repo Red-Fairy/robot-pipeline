@@ -1,5 +1,5 @@
 # VLA Model arguments
-model_name_or_path: /home/v-rundongluo/checkpoints/0524-mistral/checkpoint-22000
+model_name_or_path: /home/v-rundongluo/data-rundong/VLA-experiments/0603-vision-first-phi3-bridge-noMask/checkpoint-7000/
 model_revision: main
 torch_dtype: float16
 use_flash_attention_2: false
@@ -7,7 +7,7 @@ use_flash_attention_2: false
 # Data training arguments
 static_video_description:
   - ""
-src_filepath: /home/v-rundongluo/robot-pipeline/test_data/bridge.json
+src_filepath: /home/v-rundongluo/robot-pipeline/test_data/sample-rt1.json
 action_before_vision: false
 
 # TATS Tokenizer Arguments
