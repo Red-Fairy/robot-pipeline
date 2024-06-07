@@ -94,16 +94,6 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval,
     '''
     
     video_tokens, action_tokens = encode(instance_data, model_vq, tats_args, device=device)
-
-    # recon_video_tokens = torch.tensor(video_tokens).reshape(3, 16, 16).unsqueeze(0).to(device)
-    # recon_frames = model_vq.decode_video(recon_video_tokens).squeeze(0).permute(1,0,2,3).detach().cpu() # 6, 3, 256, 256
-    # for i, frame in enumerate(recon_frames):
-    #     img = (frame + 0.5).clamp(0,1).numpy().transpose(1, 2, 0)
-    #     img = (img * 255).astype(np.uint8)
-    #     img = Image.fromarray(img)
-    #     img.save(f'../recon_{i}.png')
-    # exit()
-
     output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred = call_vla(instance_data, video_tokens, action_tokens, model_vla, tokenizer, data_args, device)
 
     output_frames = model_vq.decode_video(output_video_tokens_pred).squeeze(0).permute(1,0,2,3).detach().cpu() # 6, 3, 256, 256
@@ -111,6 +101,7 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval,
 
     instance_data['clip_description'] = output_clip_description_pred
     instance_data['actions'] = output_action_pred.tolist()
+    instance_data['images'] = output_frames
 
     return instance_data
 
@@ -142,54 +133,66 @@ def main():
     f = open(data_args.src_filepath, 'r')
     lines = f.readlines()
     f.close()
-    assert len(lines) == 1
 
-    # 1. encode the images and actions
-    '''
-    src file should contains the following entry
-    trajectory_id, frame_number
-    task_description, scene_description, input_clip_description
-    image_indices
-    actions, mean, std
-    '''
+    for line in lines:
+        '''
+        1. encode the images and actions
+        src file should contains the following entry
+        trajectory_id, frame_number, task_description, scene_description, input_clip_description
+        image_indices, actions
+        '''
+        instance_data = json.loads(line) 
 
-    instance_data = json.loads(lines[0]) 
+        trajectory_id, view = instance_data['trajectory_id'], instance_data['view']
+        save_dir = os.path.join(data_args.save_dir, f'{trajectory_id}_{view}')
+        save_path = os.path.join(save_dir, 'results.json')
+        save_image_dir = os.path.join(save_dir, 'images')
+        os.makedirs(save_image_dir, exist_ok=True)
 
-    save_path = '../output.json'
-    output_data = {}
-    pred_descriptions = {}
-    pred_actions = torch.empty(0, 7)
+        output_data = {}
+        pred_descriptions = {}
+        pred_actions = torch.empty(0, 7)
 
-    # image_format = '/home/v-rundongluo/robotdata/images_bridge' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}_' + str(instance_data['view']) + '.png'
-    image_format = '/home/v-rundongluo/robotdata/RT1/RT1-images' + '/outputimage_' + str(instance_data['trajectory_id']) + '_{}' + '.png'
-    cur_instance_data = {}
-    cur_instance_data['task_description'] = instance_data['task_description']
-    cur_instance_data['scene_description'] = instance_data['scene_description']
-    cur_instance_data['mean'] = instance_data['mean']
-    cur_instance_data['std'] = instance_data['std']
-    cur_instance_data['clip_description'] = ''
+        image_format = '/home/v-rundongluo/robotdata/images_bridge' + '/outputimage_' + str(instance_data['trajectory_id']) + \
+                    (('_{}_' + str(instance_data['view'])) if data_args.dataset_name == 'bridge2' else '_{}') + \
+                    '.png'
+        cur_instance_data = {}
+        cur_instance_data['task_description'] = instance_data['task_description']
+        cur_instance_data['scene_description'] = instance_data['scene_description']
+        cur_instance_data['mean'] = instance_data['mean']
+        cur_instance_data['std'] = instance_data['std']
 
-    for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6)):
-        if start_frame != -1:
-            cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
-            cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
-        else:
-            cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
-            cur_instance_data['actions'] = [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] * 6
-        
-        # call the models, override original actions and clip description with the predicted ones
-        cur_instance_data = call_models(cur_instance_data, model_vq, model_vla, tokenizer, tats_args, data_args, device)
-        pred_descriptions[start_frame+11 if start_frame!=-1 else 5] = cur_instance_data['clip_description']
-        pred_actions = torch.cat((pred_actions, (torch.tensor(cur_instance_data['actions']) * torch.tensor(instance_data['std']) + torch.tensor(instance_data['mean']))), dim=0)
+        for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6)):
+            if start_frame != -1:
+                cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
+                cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
+                cur_instance_data['clip_description'] = ''
+            else:
+                cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
+                cur_instance_data['actions'] = [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] * 6
+                cur_instance_data['clip_description'] = instance_data['descriptions'][str(start_frame+5)]
+            
+            # call the models, override original actions and clip description with the predicted ones
+            cur_instance_data = call_models(cur_instance_data, model_vq, model_vla, tokenizer, tats_args, data_args, device)
+            pred_descriptions[start_frame+11 if start_frame!=-1 else 5] = cur_instance_data['clip_description']
+            pred_actions = torch.cat((pred_actions, (torch.tensor(cur_instance_data['actions']) * torch.tensor(instance_data['std']) + torch.tensor(instance_data['mean']))), dim=0)
 
-    output_data['trajectory_id'] = instance_data['trajectory_id']
-    output_data['task_description'] = instance_data['task_description']
-    output_data['scene_description'] = instance_data['scene_description']
-    output_data['pred_descriptions'] = pred_descriptions
-    output_data['pred_actions'] = pred_actions.tolist()
+            # save the frames
+            for i, img in enumerate(cur_instance_data['images']):
+                img = img.permute(1,2,0).numpy()
+                img = (img * 255).astype(np.uint8)
+                img = Image.fromarray(img)
+                img.save(os.path.join(save_image_dir, f'{start_frame+6+i if start_frame!=-1 else i}.png'))
 
-    with open(save_path, 'w') as f:
-        json.dump(output_data, f)
+        output_data['trajectory_id'] = instance_data['trajectory_id']
+        output_data['view'] = instance_data['view']
+        output_data['task_description'] = instance_data['task_description']
+        output_data['scene_description'] = instance_data['scene_description']
+        output_data['pred_descriptions'] = pred_descriptions
+        output_data['pred_actions'] = pred_actions.tolist()
+
+        with open(save_path, 'w') as f:
+            json.dump(output_data, f)
 
 if __name__ == '__main__':
     main()

@@ -258,14 +258,12 @@ class DataArguments:
         metadata={"help": "The static frame description."}
     )
     data_debug: bool = field(default=False, metadata={"help": "Debug mode for data loading."})
-    save_prediction_path: Optional[str] = field(
-        default=None,
-        metadata={"help": "The path to save the predictions."}
-    )
+    save_dir: Optional[str] = field(default=None, metadata={"help": "The path to save the predictions."})
     action_before_vision: bool = field(default=False, metadata={"help": "Whether to use vision before action."})
     start_idx: Optional[int] = field(default=0, metadata={"help": "The start index for the dataset."})
     end_idx: Optional[int] = field(default=None, metadata={"help": "The end index for the dataset."})
     src_filepath: Optional[str] = field(default=None, metadata={"help": "The source file path."})
+    dataset_name: Optional[str] = field(default=None, metadata={"help": "The name of the dataset.", "choices": ["rt1", "bridge2"]})
 
 @dataclass
 class TATSModelArguments:
