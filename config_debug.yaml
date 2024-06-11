@@ -1,5 +1,5 @@
 # VLA Model arguments
-model_name_or_path: /home/checkpoints/checkpoint-13000/
+model_name_or_path: /home/v-rundongluo/checkpoints/checkpoint-13000/
 model_revision: main
 torch_dtype: float16
 use_flash_attention_2: false

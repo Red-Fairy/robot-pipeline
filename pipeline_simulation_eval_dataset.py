@@ -17,14 +17,9 @@ from configs import H4ArgumentParser, DataArguments, VLAModelArguments, TATSMode
 from pytorch_lightning.strategies import DeepSpeedStrategy
 from torchvision import transforms
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-import logging
-import random
-import sys
-import transformers
 import os
 import json
-import time
+from time import time
 import mii
 
 @torch.no_grad()
@@ -76,10 +71,10 @@ def call_vla(instance_data: dict,
     print(output_text)
 
     output_video_tokens_pred = [int(x[:-1]) for x in output_text.split('<eov_o>')[0].split('<bov_o>')[-1].split('<va') if x != '']
-    output_video_tokens_pred = torch.tensor(output_video_tokens_pred, device=device).unsqueeze(0).reshape(3, 256)
+    output_video_tokens_pred = torch.tensor(output_video_tokens_pred, device=device).reshape(1, 3, 16, 16)
 
     output_action_tokens_pred = [int(x[:-1]) for x in output_text.split('<eoa_o>')[0].split('<boa_o>')[-1].split('<va') if x != '']
-    output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).unsqueeze(0).reshape(1, 6, 7)
+    output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).reshape(1, 6, 7)
 
     output_clip_description_pred = output_text.split('<eotp_o>')[0].split('<botp_o>')[-1]
 
@@ -94,7 +89,10 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval,
     '''
     
     video_tokens, action_tokens = encode(instance_data, model_vq, tats_args, device=device)
+
+    start = time()
     output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred = call_vla(instance_data, video_tokens, action_tokens, model_vla, tokenizer, data_args, device)
+    print(f'vla time: {time()-start:.2f} sec')
 
     output_frames = model_vq.decode_video(output_video_tokens_pred).squeeze(0).permute(1,0,2,3).detach().cpu() # 6, 3, 256, 256
     output_action_pred = model_vq.decode_action(output_action_tokens_pred).squeeze(0).detach().cpu() # 6, 7
@@ -153,7 +151,9 @@ def main():
         pred_descriptions = {}
         pred_actions = torch.empty(0, 7)
 
-        image_format = '/home/v-rundongluo/robotdata/images_bridge' + '/outputimage_' + str(instance_data['trajectory_id']) + \
+        image_format = '/home/v-rundongluo/robotdata/' + \
+                    ('bridge2/images_bridge' if data_args.dataset_name == 'bridge2' else 'RT1/RT1-images') + \
+                    '/outputimage_' + str(instance_data['trajectory_id']) + \
                     (('_{}_' + str(instance_data['view'])) if data_args.dataset_name == 'bridge2' else '_{}') + \
                     '.png'
         cur_instance_data = {}
@@ -166,11 +166,11 @@ def main():
             if start_frame != -1:
                 cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
                 cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
-                cur_instance_data['clip_description'] = ''
+                cur_instance_data['clip_description'] = instance_data['descriptions'][str(start_frame+5)]
             else:
                 cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
                 cur_instance_data['actions'] = [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] * 6
-                cur_instance_data['clip_description'] = instance_data['descriptions'][str(start_frame+5)]
+                cur_instance_data['clip_description'] = ''
             
             # call the models, override original actions and clip description with the predicted ones
             cur_instance_data = call_models(cur_instance_data, model_vq, model_vla, tokenizer, tats_args, data_args, device)
