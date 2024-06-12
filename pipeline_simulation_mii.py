@@ -9,21 +9,12 @@ from PIL import Image
 
 import os
 import argparse
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from tokenizer import VQGANVisionActionEval, VideoData, get_image_action_dataloader, count_parameters
-# from vla import get_VLA_dataset
+from tokenizer import VQGANVisionActionEval
 from configs import H4ArgumentParser, DataArguments, VLAModelArguments, TATSModelArguments
-from pytorch_lightning.strategies import DeepSpeedStrategy
 from torchvision import transforms
 
-import logging
-import random
-import sys
-import transformers
 import os
 import json
-import time
 import mii
 
 @torch.no_grad()

@@ -1,0 +1,16 @@
+# VLA Model arguments
+model_name_or_path: /home/v-rundongluo/checkpoints/mistral/checkpoint-20000/
+model_revision: main
+torch_dtype: float16
+use_flash_attention_2: false
+
+# Data training arguments
+static_video_description:
+  - ""
+src_filepath: /home/v-rundongluo/robot_datasets/tokenizer-training/bridge2/test.jsonl
+save_dir: /home/v-rundongluo/checkpoints/mistral/checkpoint-20000/pred_results_bridge2
+action_before_vision: false
+dataset_name: bridge2
+
+# TATS Tokenizer Arguments
+weight_path: /home/v-rundongluo/data-rundong/VQ3D-vision-action/0531-action111-bridge-noMask-woResidual/checkpoints/step_checkpoint-step_30000.ckpt

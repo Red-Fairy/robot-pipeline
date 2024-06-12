@@ -1,6 +1,4 @@
 import json
-import argparse
-import yaml
 import torch
 import numpy as np
 import os
@@ -9,18 +7,13 @@ from PIL import Image
 
 import os
 import argparse
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint
-from tokenizer import VQGANVisionActionEval, VideoData, get_image_action_dataloader, count_parameters
-# from vla import get_VLA_dataset
+from tokenizer import VQGANVisionActionEval
 from configs import H4ArgumentParser, DataArguments, VLAModelArguments, TATSModelArguments
-from pytorch_lightning.strategies import DeepSpeedStrategy
 from torchvision import transforms
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 import json
 from time import time
-import mii
 
 @torch.no_grad()
 def encode(instance_data, model, tats_args, device):
