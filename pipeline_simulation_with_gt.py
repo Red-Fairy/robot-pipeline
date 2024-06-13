@@ -137,8 +137,10 @@ def main():
         trajectory_id, view = instance_data['trajectory_id'], instance_data['view']
         save_dir = os.path.join(data_args.save_dir, f'{trajectory_id}_{view}')
         save_path = os.path.join(save_dir, 'results.json')
-        save_image_dir = os.path.join(save_dir, 'images')
+        save_image_dir = os.path.join(save_dir, 'images_pred')
+        save_image_dir_gt = os.path.join(save_dir, 'images_gt')
         os.makedirs(save_image_dir, exist_ok=True)
+        os.makedirs(save_image_dir_gt, exist_ok=True)
 
         output_data = {}
         pred_descriptions = {}
@@ -155,10 +157,11 @@ def main():
         cur_instance_data['mean'] = instance_data['mean']
         cur_instance_data['std'] = instance_data['std']
 
-        for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6)):
+        for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6))[:-1]:
             if start_frame != -1:
                 cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
-                cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
+                cur_instance_data['actions'] = instance_data['actions'][start_frame-1:start_frame+5] if start_frame > 0 else \
+                                                [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] + instance_data['actions'][start_frame:start_frame+5]
                 cur_instance_data['clip_description'] = instance_data['descriptions'][str(start_frame+5)]
             else:
                 cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
@@ -172,7 +175,7 @@ def main():
 
             # save the frames
             for i, img in enumerate(cur_instance_data['images']):
-                img = img.permute(1,2,0).numpy()
+                img = (img + 0.5).clamp(0,1).numpy().transpose(1, 2, 0)
                 img = (img * 255).astype(np.uint8)
                 img = Image.fromarray(img)
                 img.save(os.path.join(save_image_dir, f'{start_frame+6+i if start_frame!=-1 else i}.png'))
@@ -181,7 +184,12 @@ def main():
         output_data['view'] = instance_data['view']
         output_data['task_description'] = instance_data['task_description']
         output_data['scene_description'] = instance_data['scene_description']
-        output_data['pred_descriptions'] = pred_descriptions
+        # stack the pred_description and gt_description
+        stacked_descriptions = {}
+        for key, value in pred_descriptions.items():
+            stacked_descriptions[int(key)] = {'gt': instance_data['descriptions'][str(key)], 'pred': value}
+        output_data['descriptions'] = stacked_descriptions
+        # output_data['pred_descriptions'] = pred_descriptions
         output_data['pred_actions'] = pred_actions.tolist()
 
         with open(save_path, 'w') as f:

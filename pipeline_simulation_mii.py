@@ -12,10 +12,12 @@ import argparse
 from tokenizer import VQGANVisionActionEval
 from configs import H4ArgumentParser, DataArguments, VLAModelArguments, TATSModelArguments
 from torchvision import transforms
+import random
 
 import os
 import json
 import mii
+import time
 
 @torch.no_grad()
 def encode(instance_data, model, tats_args, device):
@@ -50,7 +52,7 @@ def call_vla(instance_data: dict,
 
     input_text = '<bott_i>' + instance_data['task_description'] + '<eott_i>' + \
                 '<bots_i>' + instance_data['scene_description'] + '<eots_i>' + \
-                '<botp_i>' + instance_data['input_clip_description'] + '<eotp_i>'
+                '<botp_i>' + instance_data['clip_description'] + '<eotp_i>'
 
     if data_args.action_before_vision:
         input_text += '<boa_i>' + ''.join([f'<va{str(x)}>' for x in action_tokens]) + '<eoa_i>' + \
@@ -59,16 +61,27 @@ def call_vla(instance_data: dict,
         input_text += '<bov_i>' + ''.join([f'<va{str(x)}>' for x in video_tokens]) + '<eov_i>' + \
                 '<boa_i>' + ''.join([f'<va{str(x)}>' for x in action_tokens]) + '<eoa_i>'
 
+    print(input_text)
+
+    start_time = time.time()
     output = vla_pipe([input_text], max_new_tokens=1024)
+    print('Time:', time.time() - start_time)
     output_text = output[0].generated_text
+    print(output_text)
+
+    output_video_tokens_pred = [int(x[:-1]) for x in output_text.split('<eov_o>')[0].split('<bov_o>')[-1].split('<va') if x != '']
+    # truncate the video tokens to 16x16
+    # output_video_tokens_pred = output_video_tokens_pred[:3*16*16]
+    output_video_tokens_pred = torch.tensor(output_video_tokens_pred, device=device).reshape(1, 3, 16, 16)
 
     output_action_tokens_pred = [int(x[:-1]) for x in output_text.split('<eoa_o>')[0].split('<boa_o>')[-1].split('<va') if x != '']
-    output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).unsqueeze(0).reshape(1, 6, 7)
+    output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).reshape(1, 6, 7)
 
     output_clip_description_pred = output_text.split('<eotp_o>')[0].split('<botp_o>')[-1]
 
-    return output_action_tokens_pred, output_clip_description_pred
+    return output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred
 
+@torch.no_grad()
 def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pipeline, 
                 tats_args: TATSModelArguments, data_args: DataArguments, device) -> dict:
     '''
@@ -78,12 +91,14 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pi
     
     video_tokens, action_tokens = encode(instance_data, model_vq, tats_args, device=device)
 
-    output_action_tokens_pred, output_clip_description_pred = call_vla(instance_data, video_tokens, action_tokens, vla_pipe, data_args, device)
+    output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred = call_vla(instance_data, video_tokens, action_tokens, vla_pipe, data_args, device)
 
+    output_frames = model_vq.decode_video(output_video_tokens_pred).squeeze(0).permute(1,0,2,3).detach().cpu() # 6, 3, 256, 256
     output_action_pred = model_vq.decode_action(output_action_tokens_pred).squeeze(0).detach().cpu() # 6, 7
 
     instance_data['clip_description'] = output_clip_description_pred
     instance_data['actions'] = output_action_pred.tolist()
+    instance_data['images'] = output_frames
 
     return instance_data
 
@@ -115,7 +130,7 @@ def main():
         '''
         1. encode the images and actions
         src file should contains the following entry
-        trajectory_id, frame_number, task_description, scene_description, input_clip_description
+        trajectory_id, frame_number, task_description, scene_description, clip_description
         image_indices, actions
         '''
 
@@ -124,8 +139,10 @@ def main():
         trajectory_id, view = instance_data['trajectory_id'], instance_data['view']
         save_dir = os.path.join(data_args.save_dir, f'{trajectory_id}_{view}')
         save_path = os.path.join(save_dir, 'results.json')
-        save_image_dir = os.path.join(save_dir, 'images')
+        save_image_dir = os.path.join(save_dir, 'images_pred')
+        save_image_dir_gt = os.path.join(save_dir, 'images_gt')
         os.makedirs(save_image_dir, exist_ok=True)
+        os.makedirs(save_image_dir_gt, exist_ok=True)
 
         output_data = {}
         pred_descriptions = {}
@@ -139,27 +156,50 @@ def main():
         cur_instance_data = {}
         cur_instance_data['task_description'] = instance_data['task_description']
         cur_instance_data['scene_description'] = instance_data['scene_description']
+        cur_instance_data['clip_description'] = random.choice(data_args.static_video_description)
         cur_instance_data['mean'] = instance_data['mean']
         cur_instance_data['std'] = instance_data['std']
 
-        for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6)):
+        for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6))[:-1]:
             if start_frame != -1:
                 cur_instance_data['image_paths'] = [image_format.format(x) for x in instance_data['image_indices'][start_frame:start_frame+6]]
-                cur_instance_data['actions'] = instance_data['actions'][start_frame:start_frame+6]
+                cur_instance_data['actions'] = instance_data['actions'][start_frame-1:start_frame+5] if start_frame > 0 else \
+                                                [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] + instance_data['actions'][start_frame:start_frame+5]
             else:
                 cur_instance_data['image_paths'] = [image_format.format(instance_data['image_indices'][0])] * 6
                 cur_instance_data['actions'] = [[0. for _ in range(6)] + [instance_data['actions'][0][-1]]] * 6
             
             # call the models, override original actions and clip description with the predicted ones
             cur_instance_data = call_models(cur_instance_data, model_vq, vla_pipe, tats_args, data_args, device)
-            pred_descriptions[6*(start_frame+1)] = cur_instance_data['clip_description']
+            pred_descriptions[start_frame+11 if start_frame!=-1 else 5] = cur_instance_data['clip_description']
             pred_actions = torch.cat((pred_actions, (torch.tensor(cur_instance_data['actions']) * torch.tensor(instance_data['std']) + torch.tensor(instance_data['mean']))), dim=0)
+
+            # save the frames
+            for i, img in enumerate(cur_instance_data['images']):
+                img = (img + 0.5).clamp(0,1).numpy().transpose(1, 2, 0)
+                img = (img * 255).astype(np.uint8)
+                img = Image.fromarray(img)
+                img.save(os.path.join(save_image_dir, f'{start_frame+6+i if start_frame!=-1 else i}.png'))
+
+        # copy the images_gt
+        for i, img_idx in enumerate(instance_data['image_indices']):
+            img_path = image_format.format(img_idx)
+            os.system(f'cp {img_path} {os.path.join(save_image_dir_gt, f"{i}.png")}')
 
         output_data['trajectory_id'] = instance_data['trajectory_id']
         output_data['task_description'] = instance_data['task_description']
         output_data['scene_description'] = instance_data['scene_description']
-        output_data['pred_descriptions'] = pred_descriptions
-        output_data['pred_actions'] = pred_actions.tolist()
+        # stack the pred_description and gt_description
+        stacked_descriptions = {}
+        for key, value in pred_descriptions.items():
+            stacked_descriptions[int(key)] = {'gt': instance_data['descriptions'][str(key)], 'pred': value}
+        output_data['descriptions'] = stacked_descriptions
+        stacked_actions = {}
+        for i in range(len(instance_data['actions']) - 1):
+            stacked_actions[i] = {'gt': instance_data['actions'][i], 'pred': pred_actions[i+1].tolist()}
+        # output_data['pred_descriptions'] = pred_descriptions
+        # output_data['pred_actions'] = pred_actions.tolist()
+        output_data['actions'] = stacked_actions
 
         with open(save_path, 'w') as f:
             json.dump(output_data, f)

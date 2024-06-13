@@ -13,4 +13,4 @@ action_before_vision: false
 dataset_name: rt1
 
 # TATS Tokenizer Arguments
-weight_path: /home/v-rundongluo/data-rundong/VQ3D-vision-action/0531-action111-bridge-noMask-woResidual/checkpoints/step_checkpoint-step_30000.ckpt
+weight_path: /home/v-rundongluo/data-rundong/VQ3D-vision-action/0602-action111-bridgeRT-noMask-woResidual-continue0531/checkpoints/step_checkpoint-step_50000.ckpt
