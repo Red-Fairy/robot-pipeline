@@ -69,17 +69,18 @@ def call_vla(instance_data: dict,
     output_text = output[0].generated_text
     print(output_text)
 
-    output_video_tokens_pred = [int(x[:-1]) for x in output_text.split('<eov_o>')[0].split('<bov_o>')[-1].split('<va') if x != '']
-    # truncate the video tokens to 16x16
-    # output_video_tokens_pred = output_video_tokens_pred[:3*16*16]
-    output_video_tokens_pred = torch.tensor(output_video_tokens_pred, device=device).reshape(1, 3, 16, 16)
+    try:
+        output_video_tokens_pred = [int(x[:-1]) for x in output_text.split('<eov_o>')[0].split('<bov_o>')[-1].split('<va') if x != '']
+        output_video_tokens_pred = torch.tensor(output_video_tokens_pred, device=device).reshape(1, 3, 16, 16)
+        
+        output_action_tokens_pred = [int(x[:-1]) for x in output_text.split('<eoa_o>')[0].split('<boa_o>')[-1].split('<va') if x != '']
+        output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).reshape(1, 6, 7)
+    
+        output_clip_description_pred = output_text.split('<eotp_o>')[0].split('<botp_o>')[-1]
+        return output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred
 
-    output_action_tokens_pred = [int(x[:-1]) for x in output_text.split('<eoa_o>')[0].split('<boa_o>')[-1].split('<va') if x != '']
-    output_action_tokens_pred = torch.tensor(output_action_tokens_pred, device=device).reshape(1, 6, 7)
-
-    output_clip_description_pred = output_text.split('<eotp_o>')[0].split('<botp_o>')[-1]
-
-    return output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred
+    except:
+        return None, None, None
 
 @torch.no_grad()
 def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pipeline, 
@@ -92,6 +93,10 @@ def call_models(instance_data, model_vq: VQGANVisionActionEval, vla_pipe: mii.pi
     video_tokens, action_tokens = encode(instance_data, model_vq, tats_args, device=device)
 
     output_video_tokens_pred, output_action_tokens_pred, output_clip_description_pred = call_vla(instance_data, video_tokens, action_tokens, vla_pipe, data_args, device)
+
+    if output_video_tokens_pred is None:
+        instance_data['failed'] = True
+        return instance_data
 
     output_frames = model_vq.decode_video(output_video_tokens_pred).squeeze(0).permute(1,0,2,3).detach().cpu() # 6, 3, 256, 256
     output_action_pred = model_vq.decode_action(output_action_tokens_pred).squeeze(0).detach().cpu() # 6, 7
@@ -159,6 +164,7 @@ def main():
         cur_instance_data['clip_description'] = random.choice(data_args.static_video_description)
         cur_instance_data['mean'] = instance_data['mean']
         cur_instance_data['std'] = instance_data['std']
+        cur_instance_data['failed'] = False
 
         for start_frame in [-1] + list(range(0, instance_data['frame_number'], 6))[:-1]:
             if start_frame != -1:
@@ -171,6 +177,9 @@ def main():
             
             # call the models, override original actions and clip description with the predicted ones
             cur_instance_data = call_models(cur_instance_data, model_vq, vla_pipe, tats_args, data_args, device)
+            if cur_instance_data['failed']:
+                print(f'Failed at {start_frame+6 if start_frame!=-1 else 0}')
+                break
             pred_descriptions[start_frame+11 if start_frame!=-1 else 5] = cur_instance_data['clip_description']
             pred_actions = torch.cat((pred_actions, (torch.tensor(cur_instance_data['actions']) * torch.tensor(instance_data['std']) + torch.tensor(instance_data['mean']))), dim=0)
 
@@ -189,16 +198,15 @@ def main():
         output_data['trajectory_id'] = instance_data['trajectory_id']
         output_data['task_description'] = instance_data['task_description']
         output_data['scene_description'] = instance_data['scene_description']
+        output_data['success'] = not cur_instance_data['failed']
         # stack the pred_description and gt_description
         stacked_descriptions = {}
         for key, value in pred_descriptions.items():
             stacked_descriptions[int(key)] = {'gt': instance_data['descriptions'][str(key)], 'pred': value}
         output_data['descriptions'] = stacked_descriptions
         stacked_actions = {}
-        for i in range(len(instance_data['actions']) - 1):
+        for i in range(len(pred_actions) - 1):
             stacked_actions[i] = {'gt': instance_data['actions'][i], 'pred': pred_actions[i+1].tolist()}
-        # output_data['pred_descriptions'] = pred_descriptions
-        # output_data['pred_actions'] = pred_actions.tolist()
         output_data['actions'] = stacked_actions
 
         with open(save_path, 'w') as f:
