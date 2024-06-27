@@ -1,5 +1,5 @@
 # VLA Model arguments
-model_name_or_path: /home/v-rundongluo/checkpoints/mistral/checkpoint-20000/
+model_name_or_path: /home/v-rundongluo/checkpoints/mistral/checkpoint-40000/
 model_revision: main
 torch_dtype: float16
 use_flash_attention_2: false
@@ -8,7 +8,7 @@ use_flash_attention_2: false
 static_video_description:
   - ""
 src_filepath: /home/v-rundongluo/robot_datasets/tokenizer-training/rt1/test.jsonl
-save_dir: /home/v-rundongluo/checkpoints/mistral/checkpoint-20000/pred_results_rt1
+save_dir: /home/v-rundongluo/checkpoints/mistral/checkpoint-40000/pred_results_rt1
 action_before_vision: false
 dataset_name: rt1
 
